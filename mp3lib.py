@@ -150,3 +150,66 @@ def lmmse_weights(Sigma_xx, Sigma_sx):
     #Solve the LMMSE normal equation
     w = np.linalg.solve(Sigma_xx, Sigma_sx)
     return w
+
+# Bonus A
+def covariance_factor(Sigma, method="cholesky", tol=1e-10):
+    """Return A satisfying A @ A.T = Sigma, up to rounding."""
+    S = np.asarray(Sigma, dtype=float)
+    if (S.ndim != 2 or S.shape[0] != S.shape[1] or S.shape[0] == 0):
+        raise ValueError("Sigma must be a nonempty square matrix.")
+    if not np.isfinite(tol) or tol < 0:
+        raise ValueError("tol must be finite and nonnegative.")
+    if not np.all(np.isfinite(S)):
+        raise ValueError("Sigma must contain finite values.")
+    if not np.allclose(S, S.T, atol=tol, rtol=0):
+        raise ValueError("Sigma must be symmetric.")
+    S = (S + S.T)/2
+    if method == "cholesky":
+        return np.linalg.cholesky(S)
+    if method == "eigh":
+        values, vectors = np.linalg.eigh(S)
+        if values.min() < -tol:
+            raise ValueError("Sigma must be positive semidefinite.")
+        # Clip negative eigenvalues only within rounding tolerance.
+        return vectors * np.sqrt(np.maximum(values, 0.0))
+    raise ValueError("method must be 'cholesky' or 'eigh'.")
+
+def pca_analysis(X, standardize=False):
+    """PCA from the sample covariance, ordered by variance."""
+    X = np.asarray(X, dtype=float)
+    if (X.ndim != 2 or X.shape[0] < 2 or X.shape[1] < 1):
+        raise ValueError("X must have at least two rows and one column.")
+    if not np.all(np.isfinite(X)):
+        raise ValueError("X must contain finite values.")
+        
+    mean, covariance = sample_mean_cov(X)
+    
+    if standardize:
+        scale = np.sqrt(np.diag(covariance))
+    else:
+        scale = np.ones(X.shape[1])
+    if np.any(scale <= 0):
+        raise ValueError("Cannot standardize a constant column.")
+    centered = (X - mean)/scale
+    _, covariance = sample_mean_cov(centered)
+    values, vectors = np.linalg.eigh(covariance)
+
+    # PCA components are ordered from largest variance to smallest.
+    order = np.argsort(values)[::-1]
+
+    # The sample covariance is PSD; remove tiny negative roundoff.
+    values = np.maximum(values[order], 0.0)
+    vectors = vectors[:, order]
+
+    if values.sum() <= 0:
+        raise ValueError("PCA requires nonzero total variance.")
+
+    return {
+        "mean": mean,
+        "scale": scale,
+        "covariance": covariance,
+        "eigenvalues": values,
+        "eigenvectors": vectors,
+        "explained": values/values.sum(),
+        "scores": centered @ vectors
+    }
